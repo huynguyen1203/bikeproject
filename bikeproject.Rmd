@@ -1,0 +1,93 @@
+## Import packages
+```{r}
+library(dplyr)
+library(RPostgreSQL)
+library(tidyverse)
+```
+## Connect to database, please change the working directory below
+```{r}
+setwd("C:/Users/Huy/Desktop")
+assertthat::assert_that(file.exists('dbconnect.txt'),
+  msg = "Your connection file is missing.")
+con_file <- readr::read_lines('dbconnect.txt')
+con <- RPostgreSQL::dbConnect(
+             PostgreSQL(),
+             host = con_file[1],
+             port = con_file[2],
+             user = con_file[3],
+         password = con_file[4],
+           dbname = con_file[5])
+```
+## Census data 
+### Import census data
+```{r}
+data <- readr::read_csv("C:\\Huy\\non-bike data\\CensusLocalAreaProfiles2016.csv")
+```
+### Remove empty columns
+```{r}
+data <- data[!apply(is.na(data) | data == "", 1, all),]
+```
+### Add Area ID, Area in Km, and Population density. Name the data frame "demographics"
+```{r}
+newdata <- subset(data, data$ID == 1 | data$ID == 95,
+              select = c(ID, 3:24))
+newdata <- t(newdata)
+colnames(newdata) <- c("population", "median_age")
+newdata <- newdata[-1,]
+area_id  <-
+  c("AR","CBD","DS","FAIR","GW","HS","KC","KERR","KIL","KITS","MARP","MP","OAK","RC","RP","SHAU","SC","STR","SUN",
+    "VF","WE","WPG")
+newdata <- cbind(area_id, newdata)
+area_in_km <- c(3.7, 4.67, 9.08, 3.63, 4.75, 8.33, 7.25, 6.61, 6.93, 6.36, 6.57, 3.72, 4.02, 8.1, 4.93, 4.48, 2.18, 4.37, 6.57, 5.5, 2.26, 5.3)
+newdata <- cbind(area_in_km, newdata)
+newdata <- data.frame(newdata,stringsAsFactors = FALSE)
+newdata <- type_convert(newdata)
+newdata <-
+  newdata %>%
+  mutate(density = population / area_in_km)
+demographics <- newdata
+```
+### Import Demographics to PostgreSQL
+```{r}
+dbWriteTable(con, "demographics", demographics, overwrite = TRUE)
+```
+## Bike Station Data
+### Import bike station data
+```{r}
+data <- readr::read_csv("C:\\Huy\\bike\\stations.csv")
+```
+### Remove empty columns and NA values
+```{r}
+data <- data[!apply(is.na(data) | data == "", 1, all),]
+```
+### Remove:
+    - station 33 (missing coordinates), station 1000 (temporary location, no coordinates),
+    - column "style" (NA values), and column "operative" (only one value "True")
+    - Cell[127,1] (special characters that cause an error in the importation to PostgreSQL)
+```{r}
+newdata <- subset(data,!data$`Station ID` == 1000)
+newdata <- subset(newdata,!newdata$`Station ID` == 33)
+newdata <- subset(newdata, select = -c(style, operative))
+newdata[127,1] <- "0197 1st & Scotia"
+```
+### Rename column label to lower case letters. Name the data frame "stations"
+```{r}
+colnames(newdata) <- c("name","station_id","area_id","lat","lon","total_slots","free_slots","avl_bikes")
+
+stations <- data.frame(newdata)
+```
+### Import "stations" to PostgreSQL
+```{r}
+dbWriteTable(con, "stations", stations, overwrite = TRUE)
+```
+## Trip history Data, January - July 2019
+### Import Mobi Trip History Data to PostgreSQL
+```{r}
+data <- readr::read_csv("C:\\Huy\\bike\\Mobi_System_Data_2019.csv")
+dbWriteTable(con,"trips",data,overwite = TRUE)
+```
+```{r}
+
+```
+
+
